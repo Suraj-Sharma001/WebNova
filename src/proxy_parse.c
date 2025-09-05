@@ -163,6 +163,14 @@ int ParsedRequest_parse(struct ParsedRequest* pr, const char* buffer, int buf_le
     }
     
     free(buf_copy);
+
+    // Provide defaults if missing
+    if(!pr->host) {
+        pr->host = duplicate_string("localhost", 9);
+    }
+    if(!pr->port) {
+        pr->port = duplicate_string("80", 2);
+    }
     
     // Validate required fields
     if(!pr->method || !pr->host || !pr->path) {

@@ -7,11 +7,24 @@
 #include <unistd.h>
 #include <arpa/inet.h>
 #include <netdb.h>
-#include <sys/socket.h>
 #include <errno.h>
+#include "http_handler.h"
+#include "cache.h"
+#include "file_share.h"
+#include <arpa/inet.h>
+#include <netdb.h>
+#include <sys/socket.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <errno.h>
+#include <fcntl.h> 
+
 
 #define MAX_BYTES 4096
 #define MAX_RESPONSE_SIZE (50 * 1024 * 1024) // 50MB max response size
+#define UPLOAD_DIR "./uploads"  // directory where files will be saved
+#define MAX_FILE_SIZE (10 * 1024 * 1024) // 10MB
+
 
 static int connect_remote_server(const char* host, int port){
     if(!host || port <= 0 || port > 65535) return -1;
@@ -272,56 +285,163 @@ int handle_post(int clientSocket, struct ParsedRequest* request, char* raw_reque
     return 1;
 }
 
-// File upload handler: basic implementation
-int handle_file_upload(int clientSocket, struct ParsedRequest* request){
-    if(!request || !request->path) {
+int handle_put(int clientSocket, struct ParsedRequest* request, char* raw_request) {
+    char filepath[1024];
+
+    // Remove /find/ prefix if present
+    const char* relative_path = request->path;
+    if (strncmp(request->path, "/find/", 6) == 0) {
+        relative_path = request->path + 6;
+    }
+
+    // Construct local file path
+    snprintf(filepath, sizeof(filepath), "./find/%s", relative_path);
+
+    // Open file for writing (create if it doesn't exist)
+    int fd = open(filepath, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if(fd < 0){
+        perror("[PUT] Failed to open file");
+        char resp[] = "HTTP/1.1 500 Internal Server Error\r\nContent-Length:0\r\n\r\n";
+        send(clientSocket, resp, strlen(resp), 0);
+        return -1;
+    }
+
+    // Calculate body start (skip HTTP headers)
+    char* body = strstr(raw_request, "\r\n\r\n");
+    if(!body){
+        close(fd);
+        char resp[] = "HTTP/1.1 400 Bad Request\r\nContent-Length:0\r\n\r\n";
+        send(clientSocket, resp, strlen(resp), 0);
+        return -1;
+    }
+    body += 4; // skip "\r\n\r\n"
+
+    // Write body to file
+    write(fd, body, strlen(body));
+    close(fd);
+
+    // Send success response
+    char resp[] = "HTTP/1.1 201 Created\r\nContent-Length:0\r\n\r\n";
+    send(clientSocket, resp, strlen(resp), 0);
+
+    printf("[PUT] File saved: %s\n", filepath);
+    return 0;
+}
+
+
+int handle_find(int clientSocket, struct ParsedRequest* request, char* raw_request) {
+    char filepath[512];
+    struct stat st;
+
+    // Remove /find/ prefix for local file path
+    const char* relative_path = request->path;
+    if (strncmp(request->path, "/find/", 6) == 0) {
+        relative_path = request->path + 6;
+    }
+
+    // Construct local file path
+    snprintf(filepath, sizeof(filepath), "./find/%s", relative_path);
+
+    // Check if file exists
+    if (stat(filepath, &st) != 0) {
+        const char* not_found = "HTTP/1.1 404 Not Found\r\n"
+                                "Content-Type: text/plain\r\n"
+                                "Connection: close\r\n\r\n"
+                                "File not found.\n";
+        send(clientSocket, not_found, strlen(not_found), 0);
+        return -1;
+    }
+
+    // Send HTTP header
+    const char* header = "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\n";
+    send(clientSocket, header, strlen(header), 0);
+
+    // Send file content
+    FILE* f = fopen(filepath, "rb");
+    if (!f) return -1;
+
+    char buffer[1024];
+    size_t n;
+    while ((n = fread(buffer, 1, sizeof(buffer), f)) > 0) {
+        send(clientSocket, buffer, n, 0);
+    }
+    fclose(f);
+
+    return 0;
+}
+
+// File upload handler
+int handle_file_upload(int clientSocket, struct ParsedRequest* request, char* body, int body_len) {
+    if (!request || !request->path || !body) {
         send_error_response(clientSocket, 400, "Invalid upload request");
         return -1;
     }
-    
-    printf("[HTTP] File upload requested: %s\n", request->path);
-    
-    // Extract filename from path
+
+    printf("[UPLOAD] File upload requested: %s\n", request->path);
+
+    // Ensure upload directory exists
+    mkdir(UPLOAD_DIR, 0755);
+
+    // Parse filename from path
     char* filename = strrchr(request->path, '/');
-    if(!filename) filename = request->path;
-    else filename++; // Skip the '/'
-    
-    if(strlen(filename) == 0) {
+    if (!filename) filename = request->path;
+    else filename++; // Skip '/'
+
+    if (strlen(filename) == 0) {
         send_error_response(clientSocket, 400, "No filename specified");
         return -1;
     }
-    
-    // For now, just return a simple response
-    // In a real implementation, you would parse multipart/form-data
-    char response[] = 
+
+    // Save file
+    char filepath[512];
+    snprintf(filepath, sizeof(filepath), "%s/%s", UPLOAD_DIR, filename);
+    FILE* fp = fopen(filepath, "wb");
+    if (!fp) {
+        send_error_response(clientSocket, 500, "Failed to save file");
+        return -1;
+    }
+
+    int write_size = body_len;
+    if (write_size > MAX_FILE_SIZE) write_size = MAX_FILE_SIZE;
+    fwrite(body, 1, write_size, fp);
+    fclose(fp);
+
+    // Respond to client
+    char response[512];
+    int len = snprintf(response, sizeof(response),
         "HTTP/1.1 200 OK\r\n"
         "Content-Type: text/html\r\n"
-        "Content-Length: 84\r\n"
+        "Content-Length: %ld\r\n"
         "Connection: close\r\n"
         "\r\n"
-        "<html><body><h1>File Upload</h1><p>Upload functionality not implemented</p></body></html>";
-    
-    send(clientSocket, response, strlen(response), 0);
+        "<html><body><h1>File uploaded successfully: %s</h1></body></html>",
+        strlen(filename) + 44, filename);
+
+    send(clientSocket, response, len, 0);
+    printf("[UPLOAD] File saved as %s\n", filepath);
+
     return 1;
 }
 
-// File download handler: uses cache and GET logic
-int handle_file_download(int clientSocket, struct ParsedRequest* request){
-    if(!request || !request->path) {
+// File download handler
+int handle_file_download(int clientSocket, struct ParsedRequest* request) {
+
+
+    if (!request || !request->path) {
         send_error_response(clientSocket, 400, "Invalid download request");
         return -1;
     }
-    
-    printf("[HTTP] File download requested: %s\n", request->path);
-    
+
+    printf("[DOWNLOAD] File download requested: %s\n", request->path);
+
     // Check if it's a local file request
-    if(strncmp(request->path, "/files/", 7) == 0) {
-        char* filename = request->path + 7; // Skip "/files/"
+    if (strncmp(request->path, "/files/", 7) == 0) {
+        char* filename = request->path + 7; // skip "/files/"
         char* file_data;
         int file_size;
-        
-        if(read_file(filename, &file_data, &file_size) == 0) {
-            // Send file with appropriate headers
+
+        if (read_file(filename, &file_data, &file_size) == 0) {
+            // Send file with headers
             char headers[1024];
             int header_len = snprintf(headers, sizeof(headers),
                 "HTTP/1.1 200 OK\r\n"
@@ -330,7 +450,7 @@ int handle_file_download(int clientSocket, struct ParsedRequest* request){
                 "Content-Length: %d\r\n"
                 "Connection: close\r\n"
                 "\r\n", filename, file_size);
-            
+
             send(clientSocket, headers, header_len, 0);
             send(clientSocket, file_data, file_size, 0);
             free(file_data);
@@ -340,8 +460,10 @@ int handle_file_download(int clientSocket, struct ParsedRequest* request){
             return -1;
         }
     }
-    
-    // Otherwise, treat as regular GET request
+
+    // Otherwise, fallback to GET handler
     char dummy_request[] = "";
     return handle_get(clientSocket, request, dummy_request);
 }
+
+

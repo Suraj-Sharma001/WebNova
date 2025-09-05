@@ -6,7 +6,10 @@
 // HTTP request handlers
 int handle_get(int clientSocket, struct ParsedRequest* request, char* raw_request);
 int handle_post(int clientSocket, struct ParsedRequest* request, char* raw_request);
-int handle_file_upload(int clientSocket, struct ParsedRequest* request);
+int handle_file_upload(int clientSocket, struct ParsedRequest* request, char* body, int body_len);
 int handle_file_download(int clientSocket, struct ParsedRequest* request);
+int handle_find(int clientSocket, struct ParsedRequest* request, char* raw_request);
+int handle_put(int clientSocket, struct ParsedRequest* request, char* raw_request);
+
 
 #endif

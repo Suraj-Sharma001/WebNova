@@ -55,18 +55,33 @@ void* thread_fn(void* arg){
         return NULL;
     }
 
-    if(strcmp(req->method, "GET") == 0){
-        printf("[THREAD] Handling GET request for %s\n", req->path);
-        handle_get(clientSocket, req, buffer);
-    } else if(strcmp(req->method, "POST") == 0){
-        printf("[THREAD] Handling POST request for %s\n", req->path);
-        handle_post(clientSocket, req, buffer);
+       if(strcmp(req->method, "GET") == 0){
+    printf("[THREAD] Handling GET request for %s\n", req->path);
+
+    // If path starts with /find/, use handle_find to serve local files
+    if(strncmp(req->path, "/find/", 6) == 0){
+        handle_find(clientSocket, req, buffer);
     } else {
-        printf("[THREAD] Unsupported method: %s\n", req->method);
-        // Send 405 Method Not Allowed
-        char response[] = "HTTP/1.1 405 Method Not Allowed\r\nContent-Length: 0\r\n\r\n";
-        send(clientSocket, response, strlen(response), 0);
+        // Otherwise, use existing GET proxy behavior
+        handle_get(clientSocket, req, buffer);
     }
+
+} else if(strcmp(req->method, "POST") == 0){
+    printf("[THREAD] Handling POST request for %s\n", req->path);
+    handle_post(clientSocket, req, buffer);
+} else if(strcmp(req->method, "FIND") == 0){
+    printf("[THREAD] Handling FIND request for %s\n", req->path);
+    handle_find(clientSocket, req, buffer);
+} else if(strcmp(req->method, "PUT") == 0){
+    printf("[THREAD] Handling PUT request for %s\n", req->path);
+    handle_put(clientSocket, req, buffer);  // New function for PUT
+} else {
+    printf("[THREAD] Unsupported method: %s\n", req->method);
+    char response[] = "HTTP/1.1 405 Method Not Allowed\r\nContent-Length: 0\r\n\r\n";
+    send(clientSocket, response, strlen(response), 0);
+}
+
+
 
     close(clientSocket);
     ParsedRequest_destroy(req);
