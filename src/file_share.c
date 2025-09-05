@@ -107,6 +107,7 @@ int file_exists(const char* filename){
 }
 
 long get_file_size(const char* filename){
+
     if(!filename) return -1;
     
     struct stat st;
@@ -115,3 +116,4 @@ long get_file_size(const char* filename){
     }
     return -1;
 }
+
