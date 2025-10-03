@@ -1,3 +1,4 @@
+
 #include "cache.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -176,6 +177,10 @@ int cache_get_size(){
     return size;
 }
 
+
+
+
+
 // Clear all cache
 void cache_clear(){
     pthread_mutex_lock(&lock);
@@ -190,3 +195,5 @@ void cache_clear(){
     printf("[CACHE] Cache cleared\n");
     pthread_mutex_unlock(&lock);
 }
+
+
