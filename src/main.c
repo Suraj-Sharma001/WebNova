@@ -13,7 +13,7 @@
 #include "cache.h"
 #include "http_handler.h"
 
-#define MAX_CLIENTS 400
+#define MAX_CLIENTS 1000
 
 sem_t semaphore;
 pthread_t tid[MAX_CLIENTS];

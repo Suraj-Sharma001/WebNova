@@ -6,6 +6,10 @@ This document explains the main commands of the proxy server, along with example
 
 ---
 
+## 0. Start Server
+ make
+./proxy_server 8080
+
 ## 1. GET Request
 
 **Description:**

@@ -53,6 +53,7 @@ int cache_get_size();
 // Clear all cache entries
 void cache_clear();
 
+#endif
 
 
 

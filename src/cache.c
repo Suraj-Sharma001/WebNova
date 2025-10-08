@@ -9,9 +9,9 @@
 #define MAX_SIZE (200 * (1 << 20))       // 200 MB total cache
 #define MAX_ELEMENT_SIZE (10 * (1 << 20)) // 10 MB per element
 
-static cache_element* head = NULL;
-static int cache_size = 0;
-static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
+cache_element* head = NULL;
+int cache_size = 0;
+pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
 
 // Find a cached element by URL
 cache_element* cache_find(char* url){
