@@ -8,23 +8,11 @@
 #include <arpa/inet.h>
 #include <netdb.h>
 #include <errno.h>
-#include "http_handler.h"
-#include "cache.h"
-#include "file_share.h"
-#include <arpa/inet.h>
-#include <netdb.h>
-#include <sys/socket.h>
-#include <sys/stat.h>
-#include <sys/types.h>
-#include <errno.h>
 #include <fcntl.h> 
-
-
 #define MAX_BYTES 4096
 #define MAX_RESPONSE_SIZE (50 * 1024 * 1024) // 50MB max response size
 #define UPLOAD_DIR "./uploads"  // directory where files will be saved
 #define MAX_FILE_SIZE (10 * 1024 * 1024) // 10MB
-
 
 static int connect_remote_server(const char* host, int port){
     if(!host || port <= 0 || port > 65535) return -1;
@@ -34,22 +22,19 @@ static int connect_remote_server(const char* host, int port){
         perror("[HTTP] Socket creation failed");
         return -1;
     }
-
-    // Set socket timeout
+   // Set socket timeout
     struct timeval timeout;
     timeout.tv_sec = 30; // 30 seconds
     timeout.tv_usec = 0;
     setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
     setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout));
-
-    struct hostent* he = gethostbyname(host);
+   struct hostent* he = gethostbyname(host);
     if(!he) {
         printf("[HTTP] Failed to resolve host: %s\n", host);
         close(sock);
         return -1;
     }
-
-    struct sockaddr_in server_addr;
+  struct sockaddr_in server_addr;
     memset(&server_addr, 0, sizeof(server_addr));
     server_addr.sin_family = AF_INET;
     server_addr.sin_port = htons(port);
@@ -64,7 +49,6 @@ static int connect_remote_server(const char* host, int port){
     printf("[HTTP] Connected to %s:%d\n", host, port);
     return sock;
 }
-
 static char* create_cache_key(struct ParsedRequest* request) {
     if(!request || !request->host || !request->path) return NULL;
     
@@ -78,11 +62,9 @@ static char* create_cache_key(struct ParsedRequest* request) {
              request->path);
     return key;
 }
-
 static int send_error_response(int clientSocket, int status_code, const char* message) {
     char response[1024];
     const char* status_text;
-    
     switch(status_code) {
         case 400: status_text = "Bad Request"; break;
         case 404: status_text = "Not Found"; break;
@@ -92,8 +74,7 @@ static int send_error_response(int clientSocket, int status_code, const char* me
         case 504: status_text = "Gateway Timeout"; break;
         default: status_text = "Error"; break;
     }
-    
-    int response_len = snprintf(response, sizeof(response),
+     int response_len = snprintf(response, sizeof(response),
         "HTTP/1.1 %d %s\r\n"
         "Content-Type: text/html\r\n"
         "Content-Length: %d\r\n"
@@ -103,8 +84,7 @@ static int send_error_response(int clientSocket, int status_code, const char* me
         "<body><h1>%d %s</h1><p>%s</p></body></html>",
         status_code, status_text, (int)(strlen(message) + 100),
         status_code, status_text, status_code, status_text, message);
-    
-    return send(clientSocket, response, response_len, 0);
+     return send(clientSocket, response, response_len, 0);
 }
 
 static int parse_url(const char* url, char** host, char** port, char** path) {
@@ -371,17 +351,14 @@ int handle_get(int clientSocket, struct ParsedRequest* request, char* raw_reques
     free(cache_key); free(host); free(port); free(path); free(full_response);
     return 1;
 }
-
 // Basic POST handler: forwards to server without caching
 int handle_post(int clientSocket, struct ParsedRequest* request, char* raw_request){
     if(!request || !request->host || !request->path) {
         send_error_response(clientSocket, 400, "Invalid request");
         return -1;
     }
-    
-    printf("[HTTP] Handling POST request: %s%s\n", request->host, request->path);
-
-    int port = request->port ? atoi(request->port) : 80;
+       printf("[HTTP] Handling POST request: %s%s\n", request->host, request->path);
+  int port = request->port ? atoi(request->port) : 80;
     int remoteSock = connect_remote_server(request->host, port);
     if(remoteSock < 0) {
         send_error_response(clientSocket, 502, "Failed to connect to remote server");
@@ -413,7 +390,6 @@ int handle_post(int clientSocket, struct ParsedRequest* request, char* raw_reque
     printf("[HTTP] POST request completed (%d bytes)\n", total_bytes);
     return 1;
 }
-
 int handle_put(int clientSocket, struct ParsedRequest* request, char* raw_request) {
     char filepath[1024];
 
@@ -531,8 +507,7 @@ int handle_file_upload(int clientSocket, struct ParsedRequest* request, char* bo
         send_error_response(clientSocket, 400, "Invalid upload request");
         return -1;
     }
-
-    printf("[UPLOAD] File upload requested: %s\n", request->path);
+  printf("[UPLOAD] File upload requested: %s\n", request->path);
 
     // Ensure upload directory exists
     mkdir(UPLOAD_DIR, 0755);
@@ -555,8 +530,7 @@ int handle_file_upload(int clientSocket, struct ParsedRequest* request, char* bo
         send_error_response(clientSocket, 500, "Failed to save file");
         return -1;
     }
-
-    int write_size = body_len;
+   int write_size = body_len;
     if (write_size > MAX_FILE_SIZE) write_size = MAX_FILE_SIZE;
     fwrite(body, 1, write_size, fp);
     fclose(fp);
@@ -615,8 +589,7 @@ int handle_file_download(int clientSocket, struct ParsedRequest* request) {
             return -1;
         }
     }
-
-    // Otherwise, fallback to GET handler
+   // Otherwise, fallback to GET handler
     char dummy_request[] = "";
     return handle_get(clientSocket, request, dummy_request);
 }
