@@ -13,6 +13,8 @@
 #include "cache.h"
 #include "http_handler.h"
 
+
+
 #define MAX_CLIENTS 1000
 
 sem_t semaphore;
@@ -68,7 +70,22 @@ void* thread_fn(void* arg){
 
 } else if(strcmp(req->method, "POST") == 0){
     printf("[THREAD] Handling POST request for %s\n", req->path);
-    handle_post(clientSocket, req, buffer);
+
+    // If path starts with /upload/, handle locally
+    if(strncmp(req->path, "/upload/", 8) == 0){
+        // Find the start of the body
+        char* body = strstr(buffer, "\r\n\r\n");
+        int body_len = 0;
+        if(body){
+            body += 4; // skip the "\r\n\r\n"
+            body_len = bytes - (body - buffer);
+        }
+
+        handle_file_upload(clientSocket, req, body, body_len);
+    } else {
+        // Otherwise, forward POST to proxy
+        handle_post(clientSocket, req, buffer);
+    }
 } else if(strcmp(req->method, "FIND") == 0){
     printf("[THREAD] Handling FIND request for %s\n", req->path);
     handle_find(clientSocket, req, buffer);
@@ -90,6 +107,7 @@ void* thread_fn(void* arg){
 }
 
 int main(int argc, char** argv){
+    setvbuf(stdout, NULL, _IONBF, 0);
     int port = 8080;
     if(argc == 2) {
         port = atoi(argv[1]);

@@ -107,139 +107,268 @@ static int send_error_response(int clientSocket, int status_code, const char* me
     return send(clientSocket, response, response_len, 0);
 }
 
-int handle_get(int clientSocket, struct ParsedRequest* request, char* raw_request){
-    // Suppress unused parameter warning
-    (void)raw_request;
+static int parse_url(const char* url, char** host, char** port, char** path) {
+    if(!url || !host || !path || !port) return -1;
+
+    const char* p = url;
+
+    // Default values
+    *port = strdup("80");
+    *path = strdup("/");
+
+    // Skip protocol
+    if(strncmp(p, "http://", 7) == 0) p += 7;
+    else if(strncmp(p, "https://", 8) == 0) {
+        p += 8;
+        free(*port);
+        *port = strdup("443"); // HTTPS default
+    }
+
+    // Extract host
+    const char* slash = strchr(p, '/');
+    if(slash) {
+        *host = strndup(p, slash - p);
+        *path = strdup(slash); // path starts with '/'
+    } else {
+        *host = strdup(p);
+        free(*path);
+        *path = strdup("/");
+    }
+
+    // Check if host contains port (example.com:8080)
+    char* colon = strchr(*host, ':');
+    if(colon) {
+        *colon = '\0';
+        free(*port);
+        *port = strdup(colon + 1);
+    }
+
+    return 0;
+}
+
+
+// int handle_get(int clientSocket, struct ParsedRequest* request, char* raw_request){
+//     // Suppress unused parameter warning
+//     (void)raw_request;
     
-    if(!request || !request->host || !request->path) {
+//     if(!request || !request->host || !request->path) {
+//         send_error_response(clientSocket, 400, "Invalid request");
+//         return -1;
+//     }
+    
+//     printf("[HTTP] Handling GET request: %s%s\n", request->host, request->path);
+
+//     // Create cache key
+//     char* cache_key = create_cache_key(request);
+//     if(!cache_key) {
+//         send_error_response(clientSocket, 500, "Memory allocation failed");
+//         return -1;
+//     }
+
+//     // Check cache first
+//     cache_element* cached = cache_find(cache_key);
+//     if(cached){
+//         printf("[HTTP] Sending cached response (%d bytes)\n", cached->len);
+//         int sent = send(clientSocket, cached->data, cached->len, 0);
+//         free(cache_key);
+//         return sent > 0 ? 1 : -1;
+//     }
+
+//     // Connect to remote server
+//     int port = request->port ? atoi(request->port) : 80;
+//     int remoteSock = connect_remote_server(request->host, port);
+//     if(remoteSock < 0) {
+//         send_error_response(clientSocket, 502, "Failed to connect to remote server");
+//         free(cache_key);
+//         return -1;
+//     }
+
+//     // Reconstruct and send HTTP request
+//     char* http_request = malloc(8192);
+//     if(!http_request) {
+//         send_error_response(clientSocket, 500, "Memory allocation failed");
+//         close(remoteSock);
+//         free(cache_key);
+//         return -1;
+//     }
+    
+//     int request_len = snprintf(http_request, 8192,
+//         "GET %s HTTP/1.1\r\n"
+//         "Host: %s\r\n"
+//         "Connection: close\r\n"
+//         "User-Agent: ProxyServer/1.0\r\n"
+//         "\r\n",
+//         request->path, request->host);
+
+//     if(send(remoteSock, http_request, request_len, 0) < 0) {
+//         printf("[HTTP] Failed to send request to remote server\n");
+//         send_error_response(clientSocket, 502, "Failed to send request to remote server");
+//         close(remoteSock);
+//         free(http_request);
+//         free(cache_key);
+//         return -1;
+//     }
+//     free(http_request);
+
+//     // Receive and forward response
+//     char buffer[MAX_BYTES];
+//     char* full_response = malloc(1);
+//     int response_size = 0;
+//     int bytes;
+    
+//     if(!full_response) {
+//         send_error_response(clientSocket, 500, "Memory allocation failed");
+//         close(remoteSock);
+//         free(cache_key);
+//         return -1;
+//     }
+//     full_response[0] = '\0';
+
+//     while((bytes = recv(remoteSock, buffer, MAX_BYTES, 0)) > 0) {
+//         // Forward data to client immediately
+//         if(send(clientSocket, buffer, bytes, 0) < 0) {
+//             printf("[HTTP] Failed to send data to client\n");
+//             break;
+//         }
+
+//         // Check if response is getting too large
+//         if(response_size + bytes > MAX_RESPONSE_SIZE) {
+//             printf("[HTTP] Response too large, not caching\n");
+//             // Continue forwarding but don't cache
+//             while((bytes = recv(remoteSock, buffer, MAX_BYTES, 0)) > 0) {
+//                 send(clientSocket, buffer, bytes, 0);
+//             }
+//             close(remoteSock);
+//             free(full_response);
+//             free(cache_key);
+//             return 1;
+//         }
+
+//         // Store response for caching
+//         char* temp = realloc(full_response, response_size + bytes + 1);
+//         if(!temp) {
+//             printf("[HTTP] Memory allocation failed, continuing without caching\n");
+//             while((bytes = recv(remoteSock, buffer, MAX_BYTES, 0)) > 0) {
+//                 send(clientSocket, buffer, bytes, 0);
+//             }
+//             close(remoteSock);
+//             free(full_response);
+//             free(cache_key);
+//             return 1;
+//         }
+//         full_response = temp;
+        
+//         memcpy(full_response + response_size, buffer, bytes);
+//         response_size += bytes;
+//         full_response[response_size] = '\0';
+//     }
+
+//     close(remoteSock);
+
+//     if(bytes < 0) {
+//         printf("[HTTP] Error receiving data from remote server\n");
+//         free(full_response);
+//         free(cache_key);
+//         return -1;
+//     }
+
+//     // Cache the response if it's not too large
+//     if(response_size > 0 && response_size < MAX_RESPONSE_SIZE) {
+//         cache_add(full_response, response_size, cache_key);
+//     }
+
+//     free(full_response);
+//     free(cache_key);
+//     printf("[HTTP] GET request completed (%d bytes)\n", response_size);
+//     return 1;
+// }
+
+int handle_get(int clientSocket, struct ParsedRequest* request, char* raw_request) {
+    (void)raw_request;
+
+    if(!request || !request->path) {
         send_error_response(clientSocket, 400, "Invalid request");
         return -1;
     }
-    
-    printf("[HTTP] Handling GET request: %s%s\n", request->host, request->path);
 
-    // Create cache key
-    char* cache_key = create_cache_key(request);
-    if(!cache_key) {
-        send_error_response(clientSocket, 500, "Memory allocation failed");
+    char* host = NULL;
+    char* port = NULL;
+    char* path = NULL;
+
+    // Parse URL from request->path
+    if(parse_url(request->path, &host, &port, &path) < 0) {
+        send_error_response(clientSocket, 400, "Failed to parse URL");
         return -1;
     }
+
+    // Remove leading slash
+    char* url = request->path;
+    if (url[0] == '/')
+        url++;  // url = "http://example.com/"
+
+    // Reuse existing variables instead of redeclaring
+    // host, port, path are already declared
+    if(parse_url(url, &host, &port, &path) < 0) {
+        send_error_response(clientSocket, 400, "Failed to parse URL");
+        return -1;
+    }
+
+    printf("[HTTP] GET %s%s (host=%s, port=%s)\n", host, path, host, port);
 
     // Check cache first
+    char* cache_key = malloc(strlen(host) + strlen(path) + 16);
+    sprintf(cache_key, "%s:%s%s", host, port, path);
     cache_element* cached = cache_find(cache_key);
-    if(cached){
+    if(cached) {
         printf("[HTTP] Sending cached response (%d bytes)\n", cached->len);
-        int sent = send(clientSocket, cached->data, cached->len, 0);
-        free(cache_key);
-        return sent > 0 ? 1 : -1;
+        send(clientSocket, cached->data, cached->len, 0);
+        free(cache_key); free(host); free(port); free(path);
+        return 1;
     }
 
-    // Connect to remote server
-    int port = request->port ? atoi(request->port) : 80;
-    int remoteSock = connect_remote_server(request->host, port);
+    // Connect remote server
+    int remoteSock = connect_remote_server(host, atoi(port));
     if(remoteSock < 0) {
-        send_error_response(clientSocket, 502, "Failed to connect to remote server");
-        free(cache_key);
+        send_error_response(clientSocket, 502, "Failed to connect remote server");
+        free(cache_key); free(host); free(port); free(path);
         return -1;
     }
 
-    // Reconstruct and send HTTP request
-    char* http_request = malloc(8192);
-    if(!http_request) {
-        send_error_response(clientSocket, 500, "Memory allocation failed");
-        close(remoteSock);
-        free(cache_key);
-        return -1;
-    }
-    
-    int request_len = snprintf(http_request, 8192,
-        "GET %s HTTP/1.1\r\n"
-        "Host: %s\r\n"
-        "Connection: close\r\n"
-        "User-Agent: ProxyServer/1.0\r\n"
-        "\r\n",
-        request->path, request->host);
+    // Build HTTP GET request
+    char http_req[8192];
+    int req_len = snprintf(http_req, sizeof(http_req),
+                           "GET %s HTTP/1.1\r\n"
+                           "Host: %s\r\n"
+                           "Connection: close\r\n"
+                           "User-Agent: ProxyServer/1.0\r\n"
+                           "\r\n",
+                           path, host);
 
-    if(send(remoteSock, http_request, request_len, 0) < 0) {
-        printf("[HTTP] Failed to send request to remote server\n");
-        send_error_response(clientSocket, 502, "Failed to send request to remote server");
-        close(remoteSock);
-        free(http_request);
-        free(cache_key);
-        return -1;
-    }
-    free(http_request);
+    send(remoteSock, http_req, req_len, 0);
 
-    // Receive and forward response
+    // Receive response and forward
     char buffer[MAX_BYTES];
     char* full_response = malloc(1);
-    int response_size = 0;
-    int bytes;
-    
-    if(!full_response) {
-        send_error_response(clientSocket, 500, "Memory allocation failed");
-        close(remoteSock);
-        free(cache_key);
-        return -1;
-    }
+    int total_size = 0;
     full_response[0] = '\0';
-
+    int bytes;
     while((bytes = recv(remoteSock, buffer, MAX_BYTES, 0)) > 0) {
-        // Forward data to client immediately
-        if(send(clientSocket, buffer, bytes, 0) < 0) {
-            printf("[HTTP] Failed to send data to client\n");
-            break;
-        }
+        send(clientSocket, buffer, bytes, 0);
 
-        // Check if response is getting too large
-        if(response_size + bytes > MAX_RESPONSE_SIZE) {
-            printf("[HTTP] Response too large, not caching\n");
-            // Continue forwarding but don't cache
-            while((bytes = recv(remoteSock, buffer, MAX_BYTES, 0)) > 0) {
-                send(clientSocket, buffer, bytes, 0);
-            }
-            close(remoteSock);
-            free(full_response);
-            free(cache_key);
-            return 1;
-        }
-
-        // Store response for caching
-        char* temp = realloc(full_response, response_size + bytes + 1);
-        if(!temp) {
-            printf("[HTTP] Memory allocation failed, continuing without caching\n");
-            while((bytes = recv(remoteSock, buffer, MAX_BYTES, 0)) > 0) {
-                send(clientSocket, buffer, bytes, 0);
-            }
-            close(remoteSock);
-            free(full_response);
-            free(cache_key);
-            return 1;
-        }
-        full_response = temp;
-        
-        memcpy(full_response + response_size, buffer, bytes);
-        response_size += bytes;
-        full_response[response_size] = '\0';
+        char* tmp = realloc(full_response, total_size + bytes + 1);
+        if(!tmp) break;
+        full_response = tmp;
+        memcpy(full_response + total_size, buffer, bytes);
+        total_size += bytes;
+        full_response[total_size] = '\0';
     }
-
     close(remoteSock);
 
-    if(bytes < 0) {
-        printf("[HTTP] Error receiving data from remote server\n");
-        free(full_response);
-        free(cache_key);
-        return -1;
-    }
+    // Cache response if not too large
+    if(total_size > 0 && total_size < MAX_RESPONSE_SIZE)
+        cache_add(full_response, total_size, cache_key);
 
-    // Cache the response if it's not too large
-    if(response_size > 0 && response_size < MAX_RESPONSE_SIZE) {
-        cache_add(full_response, response_size, cache_key);
-    }
-
-    free(full_response);
-    free(cache_key);
-    printf("[HTTP] GET request completed (%d bytes)\n", response_size);
+    free(cache_key); free(host); free(port); free(path); free(full_response);
     return 1;
 }
 
@@ -328,47 +457,73 @@ int handle_put(int clientSocket, struct ParsedRequest* request, char* raw_reques
     return 0;
 }
 
-
 int handle_find(int clientSocket, struct ParsedRequest* request, char* raw_request) {
-    char filepath[512];
-    struct stat st;
+    (void)raw_request;
 
-    // Remove /find/ prefix for local file path
     const char* relative_path = request->path;
-    if (strncmp(request->path, "/find/", 6) == 0) {
+    if (strncmp(request->path, "/find/", 6) == 0)
         relative_path = request->path + 6;
-    }
 
-    // Construct local file path
+    char filepath[512];
     snprintf(filepath, sizeof(filepath), "./find/%s", relative_path);
 
-    // Check if file exists
+    // Check cache first
+    cache_element* element = cache_find((char*)request->path);
+    if (element) {
+        printf("[FIND] Serving %s from cache (%d bytes)\n", request->path, element->len);
+        send(clientSocket, element->data, element->len, 0);
+        return 0;
+    }
+
+    // File existence
+    struct stat st;
     if (stat(filepath, &st) != 0) {
-        const char* not_found = "HTTP/1.1 404 Not Found\r\n"
-                                "Content-Type: text/plain\r\n"
-                                "Connection: close\r\n\r\n"
-                                "File not found.\n";
+        const char* not_found =
+            "HTTP/1.1 404 Not Found\r\n"
+            "Content-Type: text/plain\r\n"
+            "Connection: close\r\n\r\n"
+            "File not found.\n";
         send(clientSocket, not_found, strlen(not_found), 0);
         return -1;
     }
 
-    // Send HTTP header
-    const char* header = "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\n";
-    send(clientSocket, header, strlen(header), 0);
-
-    // Send file content
     FILE* f = fopen(filepath, "rb");
-    if (!f) return -1;
-
-    char buffer[1024];
-    size_t n;
-    while ((n = fread(buffer, 1, sizeof(buffer), f)) > 0) {
-        send(clientSocket, buffer, n, 0);
+    if (!f) {
+        send_error_response(clientSocket, 500, "Failed to open file");
+        return -1;
     }
+
+    // Read file
+    char* file_data = malloc(st.st_size);
+    fread(file_data, 1, st.st_size, f);
     fclose(f);
 
+    // Build complete HTTP response
+    char header[256];
+    int header_len = snprintf(header, sizeof(header),
+                              "HTTP/1.1 200 OK\r\n"
+                              "Content-Type: text/plain\r\n"
+                              "Content-Length: %ld\r\n"
+                              "Connection: close\r\n\r\n",
+                              st.st_size);
+
+    int total_len = header_len + st.st_size;
+    char* full_response = malloc(total_len);
+    memcpy(full_response, header, header_len);
+    memcpy(full_response + header_len, file_data, st.st_size);
+    free(file_data);
+
+    // Send to client
+    send(clientSocket, full_response, total_len, 0);
+
+    // Cache entire HTTP response
+    cache_add(full_response, total_len, (char*)request->path);
+    printf("[FIND] Cached full response for %s (%d bytes)\n", request->path, total_len);
+
+    free(full_response);
     return 0;
 }
+
 
 // File upload handler
 int handle_file_upload(int clientSocket, struct ParsedRequest* request, char* body, int body_len) {
