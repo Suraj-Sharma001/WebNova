@@ -147,7 +147,7 @@ Multiple requests are handled in separate threads, allowing simultaneous process
 
 ---
 
-### E. Download a File
+<!-- ### E. Download a File
 
 * **Endpoint**: `GET /files/<filename>`
 * **Description**: Downloads a specified file. The server adds a `Content-Disposition` header to suggest a filename to the client.
@@ -162,4 +162,4 @@ Multiple requests are handled in separate threads, allowing simultaneous process
     ```log
     [DOWNLOAD] File download requested: /files/sample.txt
     [FILE] Read file: sample.txt, size: 19 bytes
-    ```
+    ``` -->
